@@ -1,6 +1,8 @@
+from .signal import Signal
 from .temporalSignalTracker import TemporalSignalTracker
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime
+import numpy as np
 import json
 import logging
 import requests
@@ -35,7 +37,7 @@ class SentimentalTrader:
 
         # LLM configuration
         self.llm_endpoint = llm_endpoint
-        self.llm_model = "dolphin3:8b"
+        self.llm_model = "dolphin3:latest"
 
         # Trading parameters 
         self.symbols = ['BTC-USD', 'ETH-USD', 'SOL-USD']
@@ -58,8 +60,8 @@ class SentimentalTrader:
         self.reassessment_triggers = []
         
         logger.info(f"SentimentalTrader initialized in {mode.upper()} mode")
-        logger.info(f"Features: Adversarial={self.enable_adversarial},"
-                    f"Recursive depth={self.recursive_depth},"
+        logger.info(f"Features: Adversarial={self.enable_adversarial}, "
+                    f"Recursive depth={self.recursive_depth}, "
                     f"Temporal decay half-life={self.signal_tracker.halflife_hours}h")
         self._verify_llm_connection()
 
@@ -71,7 +73,7 @@ class SentimentalTrader:
                 logger.info("✓ LLM connected")
             else:
                 logger.info("LLM not responding")
-        except Excption as e:
+        except Exception as e:
             logger.error(f"Cannot connect to LLM: {e}")
 
     def query_llm(self, prompt: str, temperature: float = 0.1, role: str = "neutral") -> str:
@@ -79,10 +81,10 @@ class SentimentalTrader:
         try:
             # Add role context to prompt
             role_contexts = {
-                'bull': "/set system You are an AGGRESSIVELY BULLISH trader who looks for reasons to buy.",
-                'bear': "/set system You are an EXTREMELY BEARISH trader who looks for reasons to sell.",
-                'judge': "/set system You are an IMPARTIAL JUDGE who weighs evidence objectively.",
-                'critic': "/set system You are a CRITICAL ANALYST who finds flaws in reasoning.",
+                'bull': "You are an AGGRESSIVELY BULLISH trader who looks for reasons to buy.",
+                'bear': "You are an EXTREMELY BEARISH trader who looks for reasons to sell.",
+                'judge': "You are an IMPARTIAL JUDGE who weighs evidence objectively.",
+                'critic': "You are a CRITICAL ANALYST who finds flaws in reasoning.",
                 'neutral': ""
             }
 
@@ -102,7 +104,7 @@ class SentimentalTrader:
             response = requests.post(
                 f"{self.llm_endpoint}/api/generate",
                 json=payload,
-                timeout=45
+                timeout=60
             )
 
             if response.status_code == 200:
@@ -142,11 +144,11 @@ class SentimentalTrader:
                 return {}
     
             # Calculate indicators
-            df['SMA_7'] = ta.trend.sma_indicator(df['Close'], window=7)
-            df['SMA_21'] = ta.trend.sma_indicator(df['Close'], window=21)
-            df['RSI'] = ta.trend.rsi(df['Close'], window=14)
+            df['SMA_7'] = ta.trend.sma_indicator(df['Close'].squeeze(), window=7)
+            df['SMA_21'] = ta.trend.sma_indicator(df['Close'].squeeze(), window=21)
+            df['RSI'] = ta.momentum.rsi(df['Close'].squeeze(), window=14)
     
-            macd = ta.trend.MACD(df['Close'])
+            macd = ta.trend.MACD(df['Close'].squeeze())
             df['MACD'] = macd.macd()
             df['MACD_signal'] = macd.macd_signal()
     
@@ -154,15 +156,15 @@ class SentimentalTrader:
             prev = df.iloc[-2]
     
             return {
-                'price': float(latest['Close']),
-                'price_change_24h': float(latest['Close'] - df.iloc[-24]['Close']),
-                'rsi': float(latest['RSI']),
-                'sma_7': float(latest['SMA_7']),
-                'sma_21': float(latest['SMA_21']),
-                'macd': float(latest['MACD']),
-                'macd_signal': float(latest['MACD_signal']),
-                'trend': 'uptrend' if latest['SMA_7'] > latest['SMA_21'] else 'downtrend',
-                'macd_crossover': 'bullish' if prev['MACD'] < prev['MACD_signal'] and latest['MACD'] > latest['MACD_signal'] else "bearish" if prev['MACD'] > prev['MACD_signal'] and latest['MACD'] < latest['MACD_signal'] else "none"
+                'price': float(latest['Close'].iloc[0]),
+                'price_change_24h': float(latest['Close'].iloc[0] - df.iloc[-24]['Close'].iloc[0]),
+                'rsi': float(latest['RSI'].iloc[0]),
+                'sma_7': float(latest['SMA_7'].iloc[0]),
+                'sma_21': float(latest['SMA_21'].iloc[0]),
+                'macd': float(latest['MACD'].iloc[0]),
+                'macd_signal': float(latest['MACD_signal'].iloc[0]),
+                'trend': 'uptrend' if latest['SMA_7'].iloc[0] > latest['SMA_21'].iloc[0] else 'downtrend',
+                'macd_crossover': 'bullish' if prev['MACD'].iloc[0] < prev['MACD_signal'].iloc[0] and latest['MACD'].iloc[0] > latest['MACD_signal'].iloc[0] else "bearish" if prev['MACD'].iloc[0] > prev['MACD_signal'].iloc[0] and latest['MACD'].iloc[0] < latest['MACD_signal'].iloc[0] else "none"
             }
     
         except Exception as e:
@@ -183,7 +185,7 @@ class SentimentalTrader:
             yf_headlines = []
     
             for item in yf_news[:10]:
-                title = item.get('title', '')
+                title = item['content'].get('title', '')
                 if len(title) > 20: 
                     blob = TextBlob(title)
                     yf_sentiments.append(blob.sentiment.polarity)
@@ -192,7 +194,7 @@ class SentimentalTrader:
             yf_avg_sentiment = np.mean(yf_sentiments) if yf_sentiments else 0.0
     
             return {
-                'api': "yf",
+                'api': "yfinance",
                 'sentiment': float(yf_avg_sentiment),
                 'count': len(yf_headlines),
                 'headlines': yf_headlines[:3]
@@ -246,9 +248,9 @@ class SentimentalTrader:
             if len(df) < 24:
                 return {}
     
-            current = float(df['Close'].iloc[-1])
-            resistance = float(df['High'].tail(168).nlargest(5).mean())
-            support = float(df['Low'].tail(168).nsmallest(5).mean())
+            current = float(df.iloc[-1]['Close'].iloc[0])
+            resistance = float(df['High'].squeeze().tail(168).nlargest(5).mean())
+            support = float(df['Low'].squeeze().tail(168).nsmallest(5).mean())
     
             return {
                 'support': support,
@@ -373,7 +375,7 @@ class SentimentalTrader:
         bull_case = self.query_llm(bull_prompt, temperature=0.2, role='bull')
 
         # Step 2: Bear case
-        logger.info("Querying for bear LLM...")
+        logger.info("Querying bear LLM...")
         bear_prompt = f"""You are an EXTREMELY BEARISH trader analyzing {symbol}.
 
         {data_summary}
@@ -393,7 +395,7 @@ class SentimentalTrader:
         bear_case = self.query_llm(bear_prompt, temperature=0.2, role='bear')
 
         # Step 3: Judge evaluates both 
-        logger.info("Querying for the judge LLM...")
+        logger.info("Querying judge LLM...")
         judge_prompt = f"""You are an IMPARTIAL JUDGE evaluating a trading debate for {symbol}.
 
         {data_summary}
@@ -460,7 +462,7 @@ class SentimentalTrader:
             PROPOSED DECISION:
             - Action: {current_decision['decision']}
             - Confidence: {current_decision['confidence']}
-            - Position size: {current_decision['position_size_pct', 0]}%
+            - Position size: {current_decision.get('position_size_pct', 0)}%
             - Reasoning: {current_decision['reasoning']}
             
             CHALLENGE THIS DECISION:
@@ -483,14 +485,14 @@ class SentimentalTrader:
             critique_response = self.query_llm(critique_prompt, temperature=0.1, role='critic')
             
             try:
-                json_start = critique_reponse.find('{')
-                json_end = critique_reponse.find('}') + 1
+                json_start = critique_response.find('{')
+                json_end = critique_response.find('}') + 1
                 critique = json.loads(critique_response[json_start:json_end])
 
                 validation_history.append({
                     'level': level + 1,
-                    'verdict': critique_response['verdict'],
-                    'critique': critique_response['critique']
+                    'verdict': critique['verdict'],
+                    'critique': critique['critique']
                 })
 
                 if critique['verdict'] == 'validated':
@@ -506,7 +508,7 @@ class SentimentalTrader:
                 logger.error(f"Validation level {level + 1} failed: {e}")
                 break
 
-        current_decision['validation_history'] = vaidation_history
+        current_decision['validation_history'] = validation_history
         current_decision['validation_depth'] = len(validation_history)
 
         return current_decision
@@ -522,9 +524,9 @@ class SentimentalTrader:
         4. Recursive validation
         5. Final decision
         """
-        logger.info(f"\n{'='*70}")
-        logger.info(f"COMPREHENSIVE ANALYSIS FOR {symbol}")
-        logger.info(f"{'='*70}")
+        print(f"\n{'='*70}")
+        print(f"COMPREHENSIVE ANALYSIS FOR {symbol}")
+        print(f"{'='*70}")
 
         # Step 1: Check if we need to reassess existing position
         if symbol in self.positions:
@@ -567,16 +569,16 @@ class SentimentalTrader:
         # Log decision
         self.decision_log.append(decision)
 
-        logger.info(f"\n{'='*70}")
-        logger.info(f"FINAL DECISION FOR {symbol}")
-        logger.info(f"{'='*70}")
-        logger.info(f"Action: {decision['decision'].upper}")
-        logger.info(f"Confidence: {decision['confidence']:.2f}")
-        logger.info(f"Position Size: {decision.get('position_size_pct', 0)}%")
-        logger.info(f"Reasoning: {decision['reasoning'][:150]}...")
+        print(f"\n{'='*70}")
+        print(f"FINAL DECISION FOR {symbol}")
+        print(f"{'='*70}")
+        print(f"Action: {decision['decision'].upper()}")
+        print(f"Confidence: {decision['confidence']:.2f}")
+        print(f"Position Size: {decision.get('position_size_pct', 0)}%")
+        print(f"Reasoning: {decision['reasoning'][:150]}...")
         if decision.get('validation_history'):
-            logger.info(f"Validation: Passed {len(decision.get('validation_history'))} levels")
-        logger.info(f"{'='*70}\n")
+            print(f"Validation: Passed {len(decision.get('validation_history'))} levels")
+        print(f"{'='*70}\n")
 
         return decision
 
@@ -733,33 +735,32 @@ class SentimentalTrader:
 
     def _log_analysis(self, decision: Dict):
         """Log what would happen in analysis mode"""
-        logger.info(f"\n{'='*60}")
-        logger.info(f"📊 ANALYSIS-ONLY MODE - NO EXECUTION")
-        logger.info(f"{'='*60}")
-        logger.info(f"Symbol: {decision['symbol']}")
-        logger.info(f"Decision: {decision['decision'].upper()}")
-        logger.info(f"Confidence: {decision['confidence']:.2f}")
-        logger.info(f"Position Size: {decision.get('position_size_pct', 0)}%")
-        logger.info(f"Reasoning: {decision['reasoning']}")
+        print(f"\n{'='*60}")
+        print(f"📊 ANALYSIS-ONLY MODE - NO EXECUTION")
+        print(f"{'='*60}")
+        print(f"Symbol: {decision['symbol']}")
+        print(f"Decision: {decision['decision'].upper()}")
+        print(f"Confidence: {decision['confidence']:.2f}")
+        print(f"Position Size: {decision.get('position_size_pct', 0)}%")
+        print(f"Reasoning: {decision['reasoning']}")
         
         if decision.get('validation_history'):
             logger.info(f"\nValidation:")
             for v in decision['validation_history']:
-                logger.info(f"  Level {v['level']}: {v['verdict']}")
+                print(f"  Level {v['level']}: {v['verdict']}")
         
         logger.info(f"{'='*60}\n")
 
     def run_strategy(self):
         """Run complete trading strategy with all its features"""
-        logger.info(f"\n{'='*70}")
-        logger.info("RUNNING TRADING STRATEGY")
-        logger.info('='*70)
-        logger.info(f"""Features active:
-        - Adversarial reasoning: {self.enable_adversarial}
-        - Recursive validation depth: {self.recursive_depth}
-        - Temporal decay half-life: {self.signal_tracker.halflife_hours}h
-        """)
-        logger.info(f"{'='*70}\n")
+        print(f"\n{'='*70}")
+        print("RUNNING TRADING STRATEGY")
+        print('='*70)
+        print(f"""Features active:
+    - Adversarial reasoning: {self.enable_adversarial}
+    - Recursive validation depth: {self.recursive_depth}
+    - Temporal decay half-life: {self.signal_tracker.halflife_hours}h""")
+        print(f"{'='*70}\n")
 
         for symbol in self.symbols:
             try:

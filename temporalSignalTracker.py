@@ -55,7 +55,7 @@ class TemporalSignalTracker:
             'news': np.mean(by_type['news']) if by_type['news'] else 0.0,
             'market': np.mean(by_type['market_structure']) if by_type['market_structure'] else 0.0,
             'signal_count': len(signals),
-            'oldest_signal_age_hours': (datetime.now() - min(s.timestamp for s in signals)).total_seconds / 3600
+            'oldest_signal_age_hours': ((datetime.now() - min(s.timestamp for s in signals)).total_seconds()) / 3600
         }
 
         # Total confidence is a weighted average - TO-DO: Optimize weights
@@ -94,7 +94,7 @@ class TemporalSignalTracker:
         - Total confidence: {confidence['total']:.2f}
         - Technical: {confidence['technical']:.2f}
         - News: {confidence['news']:.2f}
-        - Market: {confidence['market_structure']:.2f}
+        - Market: {confidence['market']:.2f}
         - Active signals: {confidence['signal_count']:.1f}
         - Oldest signal: {confidence['oldest_signal_age_hours']:.1f}h ago 
         '''

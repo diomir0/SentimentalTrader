@@ -18,6 +18,8 @@ if __name__ == "__main__":
     print()
     
     user_mode = input("\nTrading Mode? (paper/live/analysis): ")
+    while user_mode not in ['live', 'paper', 'analysis']:
+        user_mode = input("\nPlease enter correct mode (paper/live/analysis): ")
     
     # Initialize bot
     bot = SentimentalTrader(initial_balance=400, mode=user_mode)
