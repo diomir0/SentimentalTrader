@@ -900,7 +900,7 @@ class SentimentalTrader:
                         'type': s.signal_type,
                         'direction': s.direction,
                         'strength': s.strength,
-                        'decayed_strength': s.get_decayed_strength(self.signal_tracker.half_life_hours),
+                        'decayed_strength': s.get_decayed_strength(self.signal_tracker.halflife_hours),
                         'age_hours': (datetime.now() - s.timestamp).total_seconds() / 3600,
                         'details': s.details
                     }
