@@ -1,8 +1,8 @@
-from .Signal.py import Signal
+from .signal import Signal
 import numpy as np
 from datetime import datetime, timedelta
-from collections import defaultdict
 from typing import Dict, List, Tuple, Optional
+from collections import defaultdict
 
 class TemporalSignalTracker:
     '''
