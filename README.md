@@ -24,8 +24,42 @@ In order to mitigate the inherent confirmation bias LLMs can display (which can 
 This configuration forces the consideration of countergarguments, thus enabling the judge LLM to have a full picture of the pros and cons of a given trade opportunity. This mimics how professional traders debate what positions to sell, buy or hold.
 
 ### Recursive validation
-Additionally to the adversarial LLM system, the trading process also involves a recursive validation (with a default depth of 2) of the decision (initially being that of the adversarial system) which either approves it, calls for revision or reverts it. The validation process stops once the recursive validation agrees with the decision fed to it. 
+Additionally to the adversarial LLM system, the trading process also involves a recursive validation (with a default depth of 2) of the decision taken by the judge LLM in the step above, and either approves it, calls for revision or reverts it. The validation process stops once the recursive validation agrees with the decision fed to it. Ultimately, this step of the strategy:
+- Catches overconfidence ("strong technical" gets challenged)
+- Forces consideration of overlooked risks
+- Acts like an internal devil's advocate
+- Particularly valuable for small accounts that can't afford mistakes
 
 ## Temporal Confidence Decay
 This concept stipulates that older signals (news, technical) have the potential to bias the estimation of the current market state, the latter changing day-to-day, hour-to-hour. The proposed fix is to decay the confidence of signals over time, meaning that older signals won't be trusted as much as more recent ones, thus forcing a reassessment of the situation.   
 
+## Decision Flow
+```
+1. TEMPORAL CHECK
+   ├─ Check signal age for existing positions
+   ├─ If signals decayed → Force reassessment
+   └─ Collect fresh data
+
+2. DATA COLLECTION
+   ├─ Technical indicators
+   ├─ News sentiment
+   ├─ Market structure
+   └─ Generate new signals with timestamps
+
+3. ADVERSARIAL ANALYSIS
+   ├─ Bull LLM: Make case for buying
+   ├─ Bear LLM: Counter with sell case
+   └─ Judge LLM: Evaluate both arguments
+   
+4. RECURSIVE VALIDATION
+   ├─ Critic LLM: Challenge the judge's decision
+   ├─ If flaws found → Revise decision
+   ├─ Challenge revised decision
+   └─ Repeat until validated or depth reached
+
+5. EXECUTION
+   ├─ Check confidence threshold (≥0.5)
+   ├─ Calculate position size
+   ├─ Execute trade
+   └─ Log everything for analysis
+```
